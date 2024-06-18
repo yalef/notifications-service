@@ -6,38 +6,32 @@ import config
 import json
 
 
+def establish_connection(
+    host: str,
+    port: int,
+    login: str = "guest",
+    password: str = "guest",
+) -> pika.BlockingConnection:
+    return pika.BlockingConnection(
+        pika.ConnectionParameters(
+            host=host,
+            port=port,
+            credentials=pika.PlainCredentials(login, password),
+        )
+    )
+
+
 class Consumer:
     def __init__(
         self,
+        connection: pika.connection.Connection,
         cfg: config.Config,
         logger: logging.Logger,
     ):
         self.logger = logger
-        self.channel = self._establish_connection(
-            host=cfg.AMQP_HOST,
-            port=cfg.AMQP_PORT,
-            login=cfg.AMQP_USERNAME,
-            password=cfg.AMQP_PASSWORD,
-        )
+        self.channel = connection.channel()
         callback = self._build_callback(cfg.SMTP_HOST, cfg.SMTP_PORT)
-        self._configure_channel(self.channel, callback)
-
-    def _establish_connection(
-        self,
-        host: str,
-        port: int,
-        login: str = "guest",
-        password: str = "guest",
-    ) -> pika.channel.Channel:
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host=host,
-                port=port,
-                credentials=pika.PlainCredentials(login, password),
-            )
-        )
-        self.logger.info(f"Connected to {host}:{port}")
-        return connection.channel()
+        self.configure_channel(self.channel, callback)
 
     def _build_callback(
         self,
@@ -70,8 +64,10 @@ class Consumer:
 
         return callback
 
-    def _configure_channel(
-        self, channel: pika.channel.Channel, callback: typing.Callable
+    def configure_channel(
+        self,
+        channel: pika.channel.Channel,
+        callback: typing.Callable,
     ) -> None:
         exchange_name = "notifications"
         queue_name = "notification_queue"
@@ -103,9 +99,7 @@ class Consumer:
         self.channel.start_consuming()
 
 
-if __name__ == "__main__":
-    cfg = config.parse_config()
-
+def setup_logger(env: config.Config) -> logging.Logger:
     log_level = (
         logging.INFO
         if cfg.ENVIRONMENT == config.EnvEnum.DEV
@@ -113,9 +107,22 @@ if __name__ == "__main__":
     )
     logger = logging.getLogger(__name__)
     logging.basicConfig(level=log_level)
+    return logger
 
-    consumer = Consumer(
-        cfg=cfg,
-        logger=logger,
-    )
-    consumer.consume()
+
+if __name__ == "__main__":
+    cfg = config.parse_config()
+    logger = setup_logger(cfg)
+    with establish_connection(
+        host=cfg.AMQP_HOST,
+        port=cfg.AMQP_PORT,
+        login=cfg.AMQP_USERNAME,
+        password=cfg.AMQP_PASSWORD,
+    ) as amqp_connection:
+        logger.info("Connection established")
+        consumer = Consumer(
+            cfg=cfg,
+            connection=amqp_connection,
+            logger=logger,
+        )
+        consumer.consume()
