@@ -4,6 +4,7 @@ import logging
 import email_sender
 import config
 import json
+import dataclasses
 
 
 def establish_connection(
@@ -19,6 +20,14 @@ def establish_connection(
             credentials=pika.PlainCredentials(login, password),
         )
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class NotificationBody:
+    message: str
+    from_addr: str
+    to_addr: str
+    subject: str
 
 
 class Consumer:
@@ -53,14 +62,23 @@ class Consumer:
                 f"{method.exchange} - {method.routing_key}",
             )
             sender = email_sender.MessageSender(smtp_host, smtp_port)
-            data = json.loads(body)
-            sender.send(
-                message=data["message"],
-                from_addr=data["from"],
-                to_addr=data["to"],
-                subject=data["subject"],
-            )
-            channel.basic_ack(delivery_tag=method.delivery_tag)
+            try:
+                data = NotificationBody(**json.loads(body))
+                sender.send(
+                    message=data.message,
+                    from_addr=data.from_addr,
+                    to_addr=data.to_addr,
+                    subject=data.subject,
+                )
+                self.logger.info(f"Message {body} sent")
+            except TypeError:
+                self.logger.error(
+                    "Wrong arg passed to event body",
+                    exc_info=True,
+                )
+                return
+            finally:
+                channel.basic_ack(delivery_tag=method.delivery_tag)
 
         return callback
 
