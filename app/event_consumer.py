@@ -4,7 +4,8 @@ import logging
 import email_sender
 import config
 import json
-import dataclasses
+import models
+import protocols
 
 
 def establish_connection(
@@ -22,15 +23,7 @@ def establish_connection(
     )
 
 
-@dataclasses.dataclass(frozen=True)
-class NotificationBody:
-    message: str
-    from_addr: str
-    to_addr: str
-    subject: str
-
-
-class Consumer:
+class Consumer(protocols.ConsumerProtocol):
     def __init__(
         self,
         connection: pika.connection.Connection,
@@ -63,7 +56,7 @@ class Consumer:
             )
             sender = email_sender.MessageSender(smtp_host, smtp_port)
             try:
-                data = NotificationBody(**json.loads(body))
+                data = models.NotificationBody(**json.loads(body))
                 sender.send(
                     message=data.message,
                     from_addr=data.from_addr,
