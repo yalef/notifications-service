@@ -40,7 +40,7 @@ class Consumer:
         self.logger = logger
         self.channel = connection.channel()
         callback = self._build_callback(cfg.SMTP_HOST, cfg.SMTP_PORT)
-        self.configure_channel(self.channel, callback)
+        self.configure_channel(callback)
 
     def _build_callback(
         self,
@@ -84,30 +84,29 @@ class Consumer:
 
     def configure_channel(
         self,
-        channel: pika.channel.Channel,
         callback: typing.Callable,
     ) -> None:
         exchange_name = "notifications"
         queue_name = "notification_queue"
 
         # add exchange point and queue
-        channel.exchange_declare(
+        self.channel.exchange_declare(
             exchange=exchange_name,
             exchange_type="direct",
         )
-        channel.queue_declare(queue_name)
+        self.channel.queue_declare(queue_name)
 
         # bind queue on certain exchange point
-        channel.queue_bind(
+        self.channel.queue_bind(
             queue_name,
             exchange=exchange_name,
             routing_key="",
         )
 
         # define weights of consumer instances
-        channel.basic_qos(prefetch_count=1)
+        self.channel.basic_qos(prefetch_count=1)
 
-        channel.basic_consume(
+        self.channel.basic_consume(
             queue=queue_name,
             on_message_callback=callback,
         )
